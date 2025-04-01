@@ -1,0 +1,40 @@
+syntax = "proto3";
+
+package dcache;
+
+import "google/protobuf/empty.proto";
+
+option go_package = "generated/dcache";
+
+// stripe object definition
+message Stripe {
+    string id = 1;
+    uint64 offset = 2;
+    uint64 length = 3;
+    string hash = 4;
+    bytes data = 5;
+}
+
+// Request message for GetStripe
+message GetStripeRequest {
+    string stripeID = 1;
+}
+
+// Request message for RemoveStripe
+message RemoveStripeRequest {
+    string stripeID = 1;
+}
+
+// Define the service with RPC methods
+service StripeService {
+    rpc Ping(google.protobuf.Empty) returns (google.protobuf.Empty) {}
+
+    // Fetch a stripe from the node
+    rpc GetStripe(GetStripeRequest) returns (Stripe) {}
+
+    // Store a stripe on the node
+    rpc PutStripe(Stripe) returns (google.protobuf.Empty) {}
+
+    // Delete a stripe from the node
+    rpc RemoveStripe(RemoveStripeRequest) returns (google.protobuf.Empty) {}
+}
