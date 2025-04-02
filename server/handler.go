@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"sync"
 
 	"grpc-blobfuse/generated/dcache"
 
@@ -16,6 +17,7 @@ var _ dcache.StripeServiceServer = &StripeServiceHandler{}
 
 type StripeServiceHandler struct {
 	dcache.UnimplementedStripeServiceServer
+	mu       sync.Mutex
 	cacheDir string
 }
 
@@ -53,6 +55,13 @@ func (h *StripeServiceHandler) GetStripe(ctx context.Context, opts *dcache.GetSt
 }
 
 func (h *StripeServiceHandler) PutStripe(ctx context.Context, stripe *dcache.Stripe) (*empty.Empty, error) {
+	if stripe == nil {
+		return nil, fmt.Errorf("PutStripe: Stripe is nil")
+	}
+
+	h.mu.Lock()
+	defer h.mu.Unlock()
+
 	// should be written once, take locks
 	fmt.Printf("PutStripe called for stripe ID %v, offset %v, stripe length %v, hash %v, data length %v\n",
 		stripe.Id, stripe.Offset, stripe.Length, stripe.Hash, len(stripe.Data))
@@ -60,7 +69,7 @@ func (h *StripeServiceHandler) PutStripe(ctx context.Context, stripe *dcache.Str
 	stripeFilePath := filepath.Join(h.cacheDir, fmt.Sprintf("%s-%d-%d", stripe.Id, stripe.Offset, stripe.Length))
 	err := os.WriteFile(stripeFilePath, stripe.Data, 0400)
 	if err != nil {
-		fmt.Printf("Error writing stripe file [%v]\n", err.Error())
+		fmt.Printf("Error writing stripe file, hash %v [%v]\n", stripe.Hash, err.Error())
 		return nil, err
 	}
 
@@ -70,6 +79,10 @@ func (h *StripeServiceHandler) PutStripe(ctx context.Context, stripe *dcache.Str
 }
 
 func (h *StripeServiceHandler) RemoveStripe(ctx context.Context, opts *dcache.RemoveStripeRequest) (*empty.Empty, error) {
+	if opts == nil {
+		return nil, fmt.Errorf("RemoveStripe: RemoveStripeRequest is nil")
+	}
+
 	fmt.Printf("RemoveStripe called for stripe ID %v\n", opts.StripeID)
 
 	stripeFilePath := filepath.Join(h.cacheDir, opts.StripeID)

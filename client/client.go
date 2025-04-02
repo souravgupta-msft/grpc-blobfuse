@@ -2,60 +2,86 @@ package client
 
 import (
 	"context"
+	"crypto/md5"
+	"encoding/hex"
 	"fmt"
 	"grpc-blobfuse/generated/dcache"
+	"time"
 
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/credentials"
 	"google.golang.org/grpc/credentials/insecure"
 )
 
+func computeMD5Hash(data []byte) string {
+	hash := md5.Sum(data)
+	return hex.EncodeToString(hash[:])
+}
+
+func getStripe(ctx context.Context, client dcache.StripeServiceClient, stripeID string) (err error) {
+	stripe, err := client.GetStripe(ctx, &dcache.GetStripeRequest{
+		StripeID: stripeID,
+	})
+	if err != nil {
+		fmt.Printf("error getting stripe %v : %v\n", stripeID, err)
+	} else {
+		fmt.Printf("Got Stripe %v, ID: %s, Offset: %d, Length: %d, Hash: %s, Data length: %v\n", stripeID, stripe.Id, stripe.Offset, stripe.Length, stripe.Hash, len(stripe.Data))
+		fmt.Printf("Stripe Hash: %v\n", computeMD5Hash(stripe.Data))
+	}
+
+	return nil
+}
+
 func handleClient(client dcache.StripeServiceClient) (err error) {
 	var defaultCtx = context.Background()
 	var stripeSize uint64 = 16 * 1024 * 1024 //16MB
 
 	// get stripe of 16MB
-	stripe, err := client.GetStripe(defaultCtx, &dcache.GetStripeRequest{
-		StripeID: fmt.Sprintf("stripeID1-0-%d", stripeSize),
-	})
-	if err != nil {
-		fmt.Println("error getting stripe:", err)
-	} else {
-		fmt.Printf("Got Stripe, ID: %s, Offset: %d, Length: %d, Hash: %s, Data length: %v\n", stripe.Id, stripe.Offset, stripe.Length, stripe.Hash, len(stripe.Data))
+	for i := 1; i < 5; i++ {
+		go func(i int) {
+			err = getStripe(defaultCtx, client, fmt.Sprintf("stripeID%d-0-%d", i, stripeSize))
+			if err != nil {
+				fmt.Printf("error getting stripe %v : %v\n", i, err)
+			} else {
+				fmt.Printf("Stripe get successfully %v\n", i)
+			}
+		}(i)
 	}
 
-	// go func() {
-	// put stripe
-	_, err = client.PutStripe(defaultCtx, &dcache.Stripe{
-		Id:     "stripeID1",
-		Offset: stripeSize,
-		Length: stripeSize,
-		Hash:   "stripeHash1",
-		Data:   make([]byte, stripeSize),
-	})
-	if err != nil {
-		fmt.Println("error putting stripe 1:", err)
-	} else {
-		fmt.Println("Stripe put successfully 1")
-	}
-	// }()
+	time.Sleep(1 * time.Second)
 
-	// go func() {
-	_, err = client.PutStripe(defaultCtx, &dcache.Stripe{
-		Id:     "stripeID1",
-		Offset: stripeSize,
-		Length: stripeSize,
-		Hash:   "stripeHash2",
-		Data:   make([]byte, stripeSize),
-	})
-	if err != nil {
-		fmt.Println("error putting stripe 2:", err)
-	} else {
-		fmt.Println("Stripe put successfully 2")
-	}
-	// }()
+	go func() {
+		// put stripe
+		_, err = client.PutStripe(defaultCtx, &dcache.Stripe{
+			Id:     "stripeID1",
+			Offset: stripeSize,
+			Length: stripeSize,
+			Hash:   "stripeHash1",
+			Data:   make([]byte, stripeSize),
+		})
+		if err != nil {
+			fmt.Println("error putting stripe 1:", err)
+		} else {
+			fmt.Println("Stripe put successfully 1")
+		}
+	}()
 
-	// time.Sleep(2 * time.Second)
+	go func() {
+		_, err = client.PutStripe(defaultCtx, &dcache.Stripe{
+			Id:     "stripeID1",
+			Offset: stripeSize,
+			Length: stripeSize,
+			Hash:   "stripeHash2",
+			Data:   make([]byte, stripeSize),
+		})
+		if err != nil {
+			fmt.Println("error putting stripe 2:", err)
+		} else {
+			fmt.Println("Stripe put successfully 2")
+		}
+	}()
+
+	time.Sleep(4 * time.Second)
 
 	// remove stripe
 	_, err = client.RemoveStripe(defaultCtx, &dcache.RemoveStripeRequest{
